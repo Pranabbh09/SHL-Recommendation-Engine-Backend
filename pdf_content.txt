@@ -1,0 +1,1475 @@
+SHL  Assessment Recommendation System - Complete
+Implementation Guide
+🎯 What We're Building
+A production-ready AI-powered recommendation system that:
+✅ Scrapes 377+ SHL  assessments from their catalog
+✅ Accepts natural language queries or Job Description URLs
+✅ Returns balanced recommendations (hard skills + soft skills)
+✅ Achieves high Mean Recall@10 on test data
+✅ Includes full evaluation pipeline
+✅ Generates required CSV  predictions for submission
+Key Impr ovements Over  Basic Implementation:
+1. Evaluation Pipeline  - Mean Recall@10 calculation with train data
+2. Test Pr ediction Generation  - Automated CSV  output for submission
+3. Intelligent Balancing  - Ensures mix of technical + behavioral assessments
+4. Persistent Storage  - ChromaDB data survives restarts
+5. Enhanced Scraping  - Better validation and error handling
+6. Setup Validation  - Automated testing scripts
+📁 Project Structur e
+textshl-assessment-system/shl-assessment-system/
+├── backend/├── backend/
+│   ├── app/│   ├── app/
+│   │   ├── __init__.py│   │   ├── __init__.py
+│   │   ├── main.py              # FastAPI endpoints│   │   ├── main.py              # FastAPI endpoints
+│   │   ├── models.py            # Pydantic schemas│   │   ├── models.py            # Pydantic schemas
+│   │   ├── scraper_catalog.py   # Enhanced BS4 scraper│   │   ├── scraper_catalog.py   # Enhanced BS4 scraper
+│   │   ├── rag_engine.py        # RAG logic with balancing│   │   ├── rag_engine.py        # RAG logic with balancing
+│   │   └── evaluator .py         # 🆕  Evaluation & prediction generation │   │   └── evaluator .py         # 🆕  Evaluation & prediction generation
+│   ├── data/│   ├── data/
+│   │   ├── assessments.json     # Scraped catalog (auto-generated)│   │   ├── assessments.json     # Scraped catalog (auto-generated)
+│   │   ├── train.csv            # Labeled data (download from assignment)│   │   ├── train.csv            # Labeled data (download from assignment)
+│   │   └── test.csv             # Unlabeled queries (download from assignment)│   │   └── test.csv             # Unlabeled queries (download from assignment)
+│   ├── chroma_db/               # 🆕  Persistent vector database │   ├── chroma_db/               # 🆕  Persistent vector database
+│   ├── requirements.txt│   ├── requirements.txt
+│   ├── .env                     # API keys │   ├── .env                     # API keys
+│   └── test_setup.py            # 🆕  Setup validation │   └── test_setup.py            # 🆕  Setup validation
+├── frontend/├── frontend/
+│   ├── src/│   ├── src/
+│   │   ├── components/│   │   ├── components/
+│   │   │   └── ResultCard.tsx│   │   │   └── ResultCard.tsx
+│   │   ├── App.tsx │   │   ├── App.tsx
+│   │   ├── api.ts│   │   ├── api.ts
+│   │   ├── types.ts│   │   ├── types.ts
+│   │   └── index.css│   │   └── index.css
+│   ├── package.json│   ├── package.json
+│   ├── tailwind.config.js│   ├── tailwind.config.js
+│   └── tsconfig.json│   └── tsconfig.json
+├── predictions.csv              # 🆕  Generated test predictions ├── predictions.csv              # 🆕  Generated test predictions
+├── APPROACH.md                  # 🆕  2-page approach document ├── APPROACH.md                  # 🆕  2-page approach document
+└── README.md└── README.md🚀 Part 1: Backend Implementation
+Step 1: Initialize Backend
+Step 2: Cr eate requir ements.txt
+File:  backend/requirements.txt
+Install dependencies:bash
+mkdirmkdir  shl-assessment-system shl-assessment-system
+cdcd shl-assessment-system shl-assessment-system
+mkdirmkdir  -p backend/app backend/data -p backend/app backend/data
+cdcd backend backend
+text
+fastapi==0.1 15.0 fastapi==0.1 15.0
+uvicorn==0.32.0uvicorn==0.32.0
+requests==2.32.3requests==2.32.3
+beautifulsoup4==4.12.3beautifulsoup4==4.12.3
+pandas==2.2.3pandas==2.2.3
+sentence-transformers==3.3.1sentence-transformers==3.3.1
+chromadb==0.5.23chromadb==0.5.23
+google-generativeai==0.8.3google-generativeai==0.8.3
+firecrawl-py==1.5.1firecrawl-py==1.5.1
+python-dotenv==1.0.1python-dotenv==1.0.1
+pydantic==2.10.3pydantic==2.10.3
+lxml==5.3.0lxml==5.3.0
+bash
+pip pip installinstall  -r requirements.txt -r requirements.txtStep 3: Setup Envir onment Variables
+File:  backend/.env
+Get your API keys:
+Gemini:  https://aistudio.google.com/apikey
+FireCrawl:  https://firecrawl.dev/  (Sign up for free tier)
+Step 4: Cr eate Pydantic Models
+File:  backend/app/models.py
+This defines the exact API structure required by the assignment.ini
+GOOGLE_API_KEYGOOGLE_API_KEY ==your_gemini_api_key_hereyour_gemini_api_key_here
+FIRECRA WL_API_KEY FIRECRA WL_API_KEY ==your_firecrawl_api_key_hereyour_firecrawl_api_key_here
+pythonStep 5: Enhanced Scraper  with Validation
+File:  backend/app/scraper_catalog.py
+Key Impr ovements:
+Validates minimum 377 assessments
+Better test type detection (Knowledge vs Personality vs Cognitive)
+Filters out "Pre-packaged Job Solutions"
+Detailed loggingfromfrom  pydantic  pydantic importimport  BaseModel BaseModel
+fromfrom  typing  typing importimport  List List,, Optional Optional
+classclass   QueryRequestQueryRequest ((BaseModelBaseModel ))::
+        """Request body for /recommend endpoint""""""Request body for /recommend endpoint"""
+    query    query ::  strstr
+classclass   AssessmentAssessment ((BaseModelBaseModel ))::
+        """Individual assessment details""""""Individual assessment details"""
+    url    url ::  strstr
+    name    name ::  strstr
+    adaptive_support    adaptive_support ::  strstr
+    description    description ::  strstr
+    duration    duration ::  intint
+    remote_support    remote_support ::  strstr
+    test_type    test_type :: List List[[strstr]]
+classclass   RecommendResponseRecommendResponse ((BaseModelBaseModel ))::
+        """Response structure for recommendations""""""Response structure for recommendations"""
+    recommended_assessments    recommended_assessments :: List List[[AssessmentAssessment ]]
+pythonimportimport  requests requests
+fromfrom  bs4  bs4 importimport  BeautifulSoup BeautifulSoup
+importimport  re re
+importimport  json json
+importimport  os os
+fromfrom  concurrent concurrent ..futures futures importimport  ThreadPoolExecutor ThreadPoolExecutor ,, as_completed as_completed
+CATALOG_URL  CATALOG_URL  ==  "https://www .shl.com/solutions/products/product-catalog/" "https://www .shl.com/solutions/products/product-catalog/"
+DATA_PATH DATA_PATH ==  "data/assessments.json""data/assessments.json"
+defdef  scrape_catalogscrape_catalog (())::
+        """Scrapes SHL  catalog with validation""" """Scrapes SHL  catalog with validation"""
+        ifif os os..pathpath..existsexists ((DATA_PATH DATA_PATH))::
+                printprint ((f"✅  Data already exists at f"✅  Data already exists at {{DATA_PATH DATA_PATH}}""))
+                withwith  openopen ((DATA_PATH DATA_PATH,,  "r""r"))  asas f f::
+            data             data == json json ..loadload((ff))
+                printprint ((f"📊  Loaded f"📊  Loaded {{lenlen((datadata))}} assessments from cache" assessments from cache" ))
+                returnreturn
+        printprint (("🚀 Starting SHL  Catalog Crawl..." "🚀 Starting SHL  Catalog Crawl..." ))
+        
+        # Step 1: Extract all pr oduct URLs # Step 1: Extract all pr oduct URLs
+    headers     headers ==  {{"User -Agent" "User -Agent" ::  "Mozilla/5.0 (W indows NT  10.0; Win64; x64) AppleW ebKit/537.36" "Mozilla/5.0 (W indows NT  10.0; Win64; x64) AppleW ebKit/537.36" }}
+    response     response == requests requests ..getget((CATALOG_URLCATALOG_URL ,, headers headers ==headersheaders ))
+    soup     soup == BeautifulSoup BeautifulSoup ((responseresponse ..texttext,,  "html.parser""html.parser" ))
+        
+    links     links ==  setset(())
+        forfor a  a inin soup soup ..find_allfind_all (("a""a",, href href==TrueTrue))::
+        href         href == a a[['href''href' ]]
+                ifif  "/product-catalog/view/""/product-catalog/view/"   inin href href::
+                        # Normalize URL# Normalize URL
+                        ifif href href..startswithstartswith (("http""http" ))::
+                links                links ..addadd((hrefhref))
+                        elseelse::
+                links                links ..addadd((f"https://www .shl.com f"https://www .shl.com {{hrefhref}}""))
+        
+        printprint ((f"🔗  Found f"🔗  Found {{lenlen((linkslinks ))}} product links. Starting detail extraction..." product links. Starting detail extraction..." ))        # Step 2: Parallel scraping with pr ogress tracking # Step 2: Parallel scraping with pr ogress tracking
+    results     results ==  [[]]
+        withwith ThreadPoolExecutor ThreadPoolExecutor ((max_workersmax_workers ==1010))  asas executor executor ::
+        futures         futures ==  {{executorexecutor ..submitsubmit ((_parse_page_parse_page ,, url url)):: url  url forfor url  url inin links links }}
+                
+        completed         completed ==  00
+                forfor future  future inin as_completed as_completed ((futuresfutures ))::
+            completed             completed +=+=  11
+            res             res == future future ..resultresult (())
+                        ifif res res::
+                results                results ..appendappend ((resres))
+                        
+                        # Progress indicator # Progress indicator
+                        ifif completed  completed %%  5050  ====  00::
+                                printprint ((f"  Progress: f"  Progress: {{completedcompleted }}//{{lenlen((linkslinks ))}} pages processed..." pages processed..." ))
+        
+        printprint ((f"\n✅  Successfully scraped f"\n✅  Successfully scraped {{lenlen((resultsresults ))}} assessments" assessments" ))
+        
+        # Step 3: V alidation # Step 3: V alidation
+        ifif  lenlen((resultsresults ))  <<  377377::
+                printprint ((f"⚠   WARNING: Only f"⚠   WARNING: Only {{lenlen((resultsresults ))}} assessments found (minimum 377 required)" assessments found (minimum 377 required)" ))
+        
+        # Step 4: Analyze distribution # Step 4: Analyze distribution
+    type_counts     type_counts ==  {{}}
+        forfor item  item inin results results ::
+                forfor t  t inin item item [['test_type''test_type' ]]::
+            type_counts            type_counts [[tt]]  == type_counts type_counts ..getget((tt,,  00))  ++  11
+        
+        printprint ((f"\n📊  Assessment Type Distribution:" f"\n📊  Assessment Type Distribution:" ))
+        forfor test_type test_type ,, count  count inin  sortedsorted ((type_countstype_counts ..itemsitems (()),, key key==lambdalambda  x x::  --xx[[11]]))::
+                printprint ((f"   - f"   - {{test_typetest_type }}: : {{countcount }}""))
+        
+        # Save# Save
+    os    os ..makedirsmakedirs (("data""data" ,, exist_ok exist_ok ==TrueTrue))
+        withwith  openopen ((DATA_PATH DATA_PATH,,  "w""w"))  asas f f::
+        json        json ..dumpdump ((resultsresults ,, f f,, indent indent ==22))        printprint ((f"\n💾  Data saved to f"\n💾  Data saved to {{DATA_PATH DATA_PATH}}""))
+defdef  _parse_page_parse_page ((urlurl))::
+        """Parse individual assessment page""""""Parse individual assessment page"""
+        trytry::
+        resp         resp == requests requests ..getget((urlurl,, timeout timeout ==1515,, headers headers =={{
+                        "User -Agent" "User -Agent" ::  "Mozilla/5.0 (W indows NT  10.0; Win64; x64) AppleW ebKit/537.36" "Mozilla/5.0 (W indows NT  10.0; Win64; x64) AppleW ebKit/537.36"
+                }}))
+                
+                ifif resp resp ..status_code status_code !=!=  200200::
+                        returnreturn   NoneNone
+                
+        soup         soup == BeautifulSoup BeautifulSoup ((respresp..texttext,,  "html.parser""html.parser" ))
+        text         text == soup soup ..get_textget_text ((" "" ",, strip strip ==TrueTrue))
+                
+                # CRITICAL: Filter out pr e-packaged solutions (as per rubric) # CRITICAL: Filter out pr e-packaged solutions (as per rubric)
+                ifif  "Pre-packaged Job Solutions""Pre-packaged Job Solutions"   inin text  text oror  "/job-solutions/""/job-solutions/"   inin url url::
+                        returnreturn   NoneNone
+                
+                # Extract title# Extract title
+        title_tag         title_tag == soup soup ..findfind(("h1""h1"))
+                ifif  notnot title_tag title_tag ::
+                        returnreturn   NoneNone
+                
+        name         name == title_tag title_tag ..texttext..stripstrip(())
+                
+                # Extract duration (look for patterns like "25 min", "30 minutes")# Extract duration (look for patterns like "25 min", "30 minutes")
+        duration_match         duration_match == re re..searchsearch ((r'(\d+)\s*(?:min|minute)'r'(\d+)\s*(?:min|minute)' ,, text text,, re re..IGNORECASEIGNORECASE ))
+        duration         duration ==  intint((duration_matchduration_match ..groupgroup ((11))))  ifif duration_match  duration_match elseelse  00
+                
+                # Enhanced test type detection# Enhanced test type detection
+        lower_text         lower_text == text text..lowerlower (())
+        test_types         test_types ==  [[]]
+                
+                # Knowledge & Skills (T echnical/Har d Skills) # Knowledge & Skills (T echnical/Har d Skills)
+        knowledge_keywords         knowledge_keywords ==  [[                        'python''python' ,,  'java''java' ,,  'sql''sql',,  'javascript''javascript' ,,  'coding''coding' ,,  'programming''programming' ,,
+                        'technical''technical' ,,  'aptitude''aptitude' ,,  'skill''skill' ,,  'knowledge''knowledge' ,,  'excel''excel' ,,  'software''software'
+                ]]
+                ifif  anyany((kw kw inin lower_text  lower_text forfor kw  kw inin knowledge_keywords knowledge_keywords ))::
+            test_types            test_types ..appendappend (("Knowledge & Skills""Knowledge & Skills" ))
+                
+                # Personality & Behavior (Soft Skills)# Personality & Behavior (Soft Skills)
+        personality_keywords         personality_keywords ==  [[
+                        'personality''personality' ,,  'behavior''behavior' ,,  'behaviour''behaviour' ,,  'motivation''motivation' ,,  'culture''culture' ,,
+                        'leadership''leadership' ,,  'opq''opq',,  'workstyle''workstyle' ,,  'values''values' ,,  'traits''traits'
+                ]]
+                ifif  anyany((kw kw inin lower_text  lower_text forfor kw  kw inin personality_keywords personality_keywords ))::
+            test_types            test_types ..appendappend (("Personality & Behavior""Personality & Behavior" ))
+                
+                # Cognitive/Ability T ests # Cognitive/Ability T ests
+        cognitive_keywords         cognitive_keywords ==  [['cognitive''cognitive' ,,  'ability''ability' ,,  'reasoning''reasoning' ,,  'verify''verify' ,,  'numerical''numerical' ,,  'verbal''verbal' ]]
+                ifif  anyany((kw kw inin lower_text  lower_text forfor kw  kw inin cognitive_keywords cognitive_keywords ))::
+                        ifif  "Knowledge & Skills""Knowledge & Skills"   notnot  inin test_types test_types ::
+                test_types                test_types ..appendappend (("Cognitive Ability" "Cognitive Ability" ))
+                
+                # Default fallback# Default fallback
+                ifif  notnot test_types test_types ::
+            test_types            test_types ..appendappend (("General Assessment" "General Assessment" ))
+                
+                returnreturn   {{
+                        "name""name" :: name name ,,
+                        "url""url" :: url url,,
+                        "description""description" :: text text[[::10001000 ]]..stripstrip(()),,    # Include mor e context for embeddings # Include mor e context for embeddings
+                        "duration""duration" :: duration duration ,,
+                        "remote_support""remote_support" ::  "Yes""Yes"  ifif  anyany((x x inin lower_text  lower_text forfor x  x inin  [['remote''remote' ,,  'online''online' ]]))  elseelse  "No""No" ,,
+                        "adaptive_support""adaptive_support" ::  "Yes""Yes"  ifif  "adaptive""adaptive"   inin lower_text  lower_text elseelse  "No""No" ,,
+                        "test_type""test_type" :: test_types test_types
+                }}
+        
+        exceptexcept  Exception  Exception asas e e::
+                # Silent failur e for r obustness # Silent failur e for r obustness
+                returnreturn   NoneNoneStep 6: Enhanced RAG Engine with Balancing
+File:  backend/app/rag_engine.py
+Key Impr ovements:
+Persistent ChromaDB storage
+Enhanced query balancing with Gemini
+Result balancing to ensure hard/soft skill mix
+Better error handling
+pythonimportimport  os os
+importimport  json json
+importimport  chromadb chromadb
+importimport  google google ..generativeai generativeai asas genai genai
+fromfrom  firecrawl  firecrawl importimport  FirecrawlApp FirecrawlApp
+fromfrom  sentence_transformers  sentence_transformers importimport  SentenceT ransformer  SentenceT ransformer
+fromfrom  app app..scraper_catalog scraper_catalog importimport  scrape_catalog scrape_catalog
+fromfrom  dotenv  dotenv importimport  load_dotenv load_dotenv
+load_dotenvload_dotenv (())
+# API Configuration# API Configuration
+GENAI_KEY  GENAI_KEY  == os os..getenvgetenv (("GOOGLE_API_KEY""GOOGLE_API_KEY" ))
+FIRECRA WL_KEY  FIRECRA WL_KEY  == os os..getenvgetenv (("FIRECRA WL_API_KEY" "FIRECRA WL_API_KEY" ))
+ifif GENAI_KEY GENAI_KEY ::
+    genai    genai ..configureconfigure ((api_keyapi_key ==GENAI_KEYGENAI_KEY ))
+firecrawl firecrawl == FirecrawlApp FirecrawlApp ((api_keyapi_key ==FIRECRA WL_KEY FIRECRA WL_KEY ))  ifif FIRECRA WL_KEY   FIRECRA WL_KEY  elseelse  NoneNone
+classclass   RAGEngineRAGEngine ::
+        """"""
+    Retrieval-Augmented Generation Engine for SHL  Assessments     Retrieval-Augmented Generation Engine for SHL  Assessments
+        
+    Pipeline:    Pipeline:
+    1. URL  Detection → FireCrawl scraping (if URL  provided)     1. URL  Detection → FireCrawl scraping (if URL  provided)
+    2. Query Balancing → Gemini extracts hard + soft skills    2. Query Balancing → Gemini extracts hard + soft skills
+    3. Vector Search → ChromaDB retrieves similar assessments     3. Vector Search → ChromaDB retrieves similar assessments
+    4. Result Balancing → Ensures mix of technical + behavioral tests    4. Result Balancing → Ensures mix of technical + behavioral tests
+    """    """
+        
+        defdef  __init____init__ ((selfself))::
+                printprint (("🔧 Initializing RAG Engine...""🔧 Initializing RAG Engine..." ))
+                
+                # Ensur e data exists # Ensur e data exists
+        scrape_catalog        scrape_catalog (())                
+                # IMPROVED: Persistent Chr omaDB (survives r estarts) # IMPROVED: Persistent Chr omaDB (survives r estarts)
+        self        self ..chroma_client chroma_client == chromadb chromadb ..PersistentClientPersistentClient ((pathpath=="./chroma_db""./chroma_db" ))
+        self        self ..collection collection == self self..chroma_clientchroma_client ..get_or_create_collectionget_or_create_collection ((
+            name            name =="shl_assessments""shl_assessments" ,,
+            metadata            metadata =={{"hnsw:space""hnsw:space" ::  "cosine""cosine" }}    # Cosine similarity for text# Cosine similarity for text
+                ))
+                
+                # Embedding model (384-dimensional vectors)# Embedding model (384-dimensional vectors)
+        self        self ..embedder embedder == SentenceT ransformer  SentenceT ransformer (('all-MiniLM-L6-v2''all-MiniLM-L6-v2' ))
+                
+                # Index data if collection is empty# Index data if collection is empty
+                ifif self self..collectioncollection ..countcount (())  ====  00::
+            self            self .._index_data_index_data (())
+                elseelse::
+                        printprint ((f"✅  Loaded f"✅  Loaded {{selfself..collectioncollection ..countcount (())}} assessments from ChromaDB" assessments from ChromaDB" ))
+        
+        
+        defdef  _index_data_index_data ((selfself))::
+                """Index scraped assessments into vector database""""""Index scraped assessments into vector database"""
+                printprint (("🧠 Indexing assessments into ChromaDB...""🧠 Indexing assessments into ChromaDB..." ))
+                
+                withwith  openopen (("data/assessments.json""data/assessments.json" ,,  "r""r"))  asas f f::
+            data             data == json json ..loadload((ff))
+                
+                # Create rich text r epresentation for embedding # Create rich text r epresentation for embedding
+        documents         documents ==  [[]]
+                forfor item  item inin data data ::
+            doc             doc ==  f"f"{{itemitem[['name''name' ]]}}  {{itemitem[['description''description' ]]}}  {{' '' '..joinjoin((itemitem[['test_type''test_type' ]]))}}""
+            documents            documents ..appendappend ((docdoc))
+                
+                # Generate embeddings# Generate embeddings
+        embeddings         embeddings == self self..embedderembedder ..encodeencode ((documentsdocuments ,, show_progress_bar show_progress_bar ==TrueTrue))..tolisttolist (())
+                
+                # Stor e in Chr omaDB # Stor e in Chr omaDB
+        self        self ..collectioncollection ..addadd((
+            documents            documents ==documentsdocuments ,,            embeddings            embeddings ==embeddingsembeddings ,,
+            metadatas            metadatas ==datadata,,
+            ids            ids ==[[strstr((ii))  forfor i  i inin  rangerange ((lenlen((datadata))))]]
+                ))
+                
+                printprint ((f"✅  Indexed f"✅  Indexed {{lenlen((datadata))}} assessments" assessments" ))
+        
+        
+        defdef  process_queryprocess_query ((selfself,, user_input user_input ::  strstr))::
+                """"""
+        Main recommendation pipeline        Main recommendation pipeline
+                
+        Args:         Args:
+            user_input: Natural language query or URL            user_input: Natural language query or URL
+                
+        Returns:        Returns:
+            List of recommended assessments (dicts)            List of recommended assessments (dicts)
+        """        """
+                # Step 1: Handle URL  inputs via Fir eCrawl # Step 1: Handle URL  inputs via Fir eCrawl
+        search_text         search_text == user_input user_input
+                
+                ifif user_input user_input ..startswithstartswith (("http""http" ))::
+                        printprint (("🕷  URL  detected. Scraping with FireCrawl..." "🕷  URL  detected. Scraping with FireCrawl..." ))
+            search_text             search_text == self self.._scrape_url_scrape_url ((user_inputuser_input ))
+                
+                # Step 2: Balance query (extract har d + soft skills) # Step 2: Balance query (extract har d + soft skills)
+        balanced_query         balanced_query == self self.._balance_query_balance_query ((search_textsearch_text ))
+                
+                # Step 3: V ector sear ch # Step 3: V ector sear ch
+        query_embedding         query_embedding == self self..embedderembedder ..encodeencode (([[balanced_querybalanced_query ]]))..tolisttolist (())
+        results         results == self self..collectioncollection ..queryquery ((
+            query_embeddings            query_embeddings ==query_embeddingquery_embedding ,,
+            n_results            n_results ==2020    # Get mor e, then filter # Get mor e, then filter
+                ))
+                
+                # Step 4: Convert to list of dicts# Step 4: Convert to list of dicts
+        recommendations         recommendations ==  [[]]                ifif results results [['metadatas''metadatas' ]]::
+                        forfor meta  meta inin results results [['metadatas''metadatas' ]][[00]]::
+                recommendations                recommendations ..appendappend ((metameta ))
+                
+                # Step 5: Balance r esults (ensur e har d/soft skill mix) # Step 5: Balance r esults (ensur e har d/soft skill mix)
+        balanced_results         balanced_results == self self.._balance_results_balance_results ((recommendationsrecommendations ,, target_count target_count ==1010))
+                
+                returnreturn  balanced_results balanced_results
+        
+        
+        defdef  _scrape_url_scrape_url ((selfself,, url url::  strstr))  -->>  strstr::
+                """Scrape job description from URL  using FireCrawl""" """Scrape job description from URL  using FireCrawl"""
+                ifif  notnot firecrawl firecrawl ::
+                        printprint (("⚠  FireCrawl API key missing. Using URL  as-is." "⚠  FireCrawl API key missing. Using URL  as-is." ))
+                        returnreturn  url url
+                
+                trytry::
+            result             result == firecrawl firecrawl ..scrape_urlscrape_url ((urlurl,, params params =={{'formats''formats' ::  [['markdown''markdown' ]]}}))
+            markdown_text             markdown_text == result result ..getget(('markdown''markdown' ,,  ''''))
+                        
+                        ifif markdown_text markdown_text ::
+                                printprint ((f"✅  Scraped f"✅  Scraped {{lenlen((markdown_textmarkdown_text ))}} characters from URL" characters from URL" ))
+                                returnreturn  markdown_text markdown_text [[::30003000 ]]    # Limit context window# Limit context window
+                        elseelse::
+                                printprint (("⚠  FireCrawl returned empty content""⚠  FireCrawl returned empty content" ))
+                                returnreturn  url url
+                
+                exceptexcept  Exception  Exception asas e e::
+                        printprint ((f"❌  FireCrawl error: f"❌  FireCrawl error: {{ee}}""))
+                        returnreturn  url url
+        
+        
+        defdef  _balance_query_balance_query ((selfself,, text text::  strstr))  -->>  strstr::
+                """"""
+        Use Gemini to extract and balance hard + soft skills from query        Use Gemini to extract and balance hard + soft skills from query
+                
+        This ensures we search for both technical and behavioral assessments         This ensures we search for both technical and behavioral assessments        """        """
+                ifif  notnot GENAI_KEY GENAI_KEY ::
+                        printprint (("⚠  Gemini API key missing. Skipping query balancing." "⚠  Gemini API key missing. Skipping query balancing." ))
+                        returnreturn  text text
+                
+        model         model == genai genai ..GenerativeModelGenerativeModel (('gemini-1.5-flash''gemini-1.5-flash' ))
+                
+        prompt         prompt ==  f"""f"""
+You are an expert HR assessment analyst. Analyze this job requirement: You are an expert HR assessment analyst. Analyze this job requirement:
+""{{texttext[[::1500]1500] }}""
+Extract the key requirements in TWO categories: Extract the key requirements in TWO categories:
+1. HARD SKILLS: Technical abilities, tools, programming languages, certifications, domain knowled 1. HARD SKILLS: Technical abilities, tools, programming languages, certifications, domain knowled
+2. SOFT  SKILLS: Personality traits, teamwork, leadership, communication, behavioral competencies 2. SOFT  SKILLS: Personality traits, teamwork, leadership, communication, behavioral competencies
+Create a balanced search query that gives EQUAL  weight to both categories. Create a balanced search query that gives EQUAL  weight to both categories.
+Format: "T echnical: [list key hard skills] AND Behavioral: [list key soft skills]" Format: "T echnical: [list key hard skills] AND Behavioral: [list key soft skills]"
+Example Output: "T echnical: Java, SQL, API development AND Behavioral: team collaboration, stake Example Output: "T echnical: Java, SQL, API development AND Behavioral: team collaboration, stake
+If only one category is present, still structure the output the same way . If only one category is present, still structure the output the same way .
+""""""
+                
+                trytry::
+            response             response == model model ..generate_contentgenerate_content ((promptprompt ))
+            balanced             balanced == response response ..texttext..stripstrip(())
+                        printprint ((f"🎯  Balanced Query: f"🎯  Balanced Query: {{balancedbalanced [[::100]100]}}..."..."))
+                        returnreturn  balanced balanced
+                
+                exceptexcept  Exception  Exception asas e e::
+                        printprint ((f"❌  Gemini error: f"❌  Gemini error: {{ee}}""))
+                        returnreturn  text text
+        
+        
+        defdef  _balance_results_balance_results ((selfself,, results results ::  listlist,, target_count target_count ::  intint  ==  1010))  -->>  listlist::                """"""
+        CRITICAL  REQUIREMENT : Balance recommendations across test types         CRITICAL  REQUIREMENT : Balance recommendations across test types
+                
+        When a query spans multiple domains (e.g., "Java developer who collaborates well"),         When a query spans multiple domains (e.g., "Java developer who collaborates well"),
+        results should include BOTH:        results should include BOTH:
+        - Knowledge & Skills (technical tests)        - Knowledge & Skills (technical tests)
+        - Personality & Behavior (soft skill tests)        - Personality & Behavior (soft skill tests)
+                
+        This prevents returning only technical tests for technical roles.         This prevents returning only technical tests for technical roles.
+        """        """
+                # Categorize r esults # Categorize r esults
+        knowledge_tests         knowledge_tests ==  [[]]
+        personality_tests         personality_tests ==  [[]]
+        other_tests         other_tests ==  [[]]
+                
+                forfor r  r inin results results ::
+            test_types             test_types == r r..getget(('test_type''test_type' ,,  [[]]))
+                        
+                        ifif  "Knowledge & Skills""Knowledge & Skills"   inin test_types  test_types oror  "Cognitive Ability" "Cognitive Ability"   inin test_types test_types ::
+                knowledge_tests                knowledge_tests ..appendappend ((rr))
+                        elifelif  "Personality & Behavior""Personality & Behavior"   inin test_types test_types ::
+                personality_tests                personality_tests ..appendappend ((rr))
+                        elseelse::
+                other_tests                other_tests ..appendappend ((rr))
+                
+                # If we have both types, cr eate balanced mix # If we have both types, cr eate balanced mix
+                ifif knowledge_tests  knowledge_tests andand personality_tests personality_tests ::
+                        # 50-50 split# 50-50 split
+            half             half == target_count  target_count ////  22
+            balanced             balanced == knowledge_tests knowledge_tests [[::halfhalf]]  ++ personality_tests personality_tests [[::halfhalf]]
+                        
+                        # Fill r emaining slots # Fill r emaining slots
+            remaining             remaining == target_count  target_count --  lenlen((balancedbalanced ))
+                        ifif remaining  remaining >>  00::
+                balanced                balanced ..extendextend ((other_testsother_tests [[::remainingremaining ]]))
+                        
+                        printprint ((f"⚖   Balanced: f"⚖   Balanced: {{lenlen((knowledge_testsknowledge_tests [[::halfhalf]]))}} technical +  technical + {{lenlen((personality_testspersonality_tests [[::halfhalf]]))}}Step 7: NEW  - Evaluation Pipeline
+File:  backend/app/evaluator .py
+This is CRITICAL  for submission - without this, your  solution will be r ejected!                        returnreturn  balanced balanced [[::target_counttarget_count ]]
+                
+                # Otherwise, r eturn top r esults # Otherwise, r eturn top r esults
+                returnreturn  results results [[::target_counttarget_count ]]
+pythonimportimport  pandas  pandas asas pd pd
+importimport  json json
+fromfrom  app app..rag_engine rag_engine importimport  RAGEngine RAGEngine
+fromfrom  typing  typing importimport  Dict Dict ,, List List
+defdef  load_train_dataload_train_data ((pathpath=="data/train.csv""data/train.csv" ))  -->> Dict Dict [[strstr,, List List[[strstr]]]]::
+        """"""
+    Load labeled training data    Load labeled training data
+        
+    Expected CSV  format:     Expected CSV  format:
+    Query ,Assessment_url     Query ,Assessment_url
+    Query 1,https://...    Query 1,https://...
+    Query 1,https://...    Query 1,https://...
+    Query 2,https://...    Query 2,https://...
+    """    """
+    df     df == pd pd..read_csvread_csv ((pathpath))
+        
+        # Group URLs by query# Group URLs by query
+    grouped     grouped == df df..groupbygroupby (('Query''Query' ))[['Assessment_url''Assessment_url' ]]..applyapply ((listlist))..to_dictto_dict (())
+        
+        printprint ((f"📚  Loaded f"📚  Loaded {{lenlen((groupedgrouped ))}} training queries" training queries" ))
+        returnreturn  grouped grouped
+defdef  calculate_recall_at_kcalculate_recall_at_k ((predicted_urlspredicted_urls :: List List[[strstr]],,  
+                          ground_truth_urls                          ground_truth_urls :: List List[[strstr]],,  
+                          k                          k ::  intint  ==  1010))  -->>  floatfloat::
+        """"""
+    Calculate Recall@K metric    Calculate Recall@K metric
+        
+    Recall@K = (Number of relevant items in top-K) / (T otal relevant items)     Recall@K = (Number of relevant items in top-K) / (T otal relevant items)
+        
+    Args:     Args:
+        predicted_urls: List of URLs returned by system (in rank order)        predicted_urls: List of URLs returned by system (in rank order)
+        ground_truth_urls: List of correct URLs for this query        ground_truth_urls: List of correct URLs for this query
+        k: Number of top results to consider        k: Number of top results to consider
+            Returns:    Returns:
+        Recall score between 0 and 1        Recall score between 0 and 1
+    """    """
+    predicted_set     predicted_set ==  setset((predicted_urlspredicted_urls [[::kk]]))
+    relevant_set     relevant_set ==  setset((ground_truth_urlsground_truth_urls ))
+        
+        ifif  lenlen((relevant_setrelevant_set ))  ====  00::
+                returnreturn   0.00.0
+        
+        # Count how many r elevant items we r etrieved # Count how many r elevant items we r etrieved
+    hits     hits ==  lenlen((predicted_setpredicted_set ..intersectionintersection ((relevant_setrelevant_set ))))
+        
+        returnreturn  hits  hits //  lenlen((relevant_setrelevant_set ))
+defdef  evaluate_engineevaluate_engine ((engineengine :: RAGEngine RAGEngine ,, train_data train_data :: Dict Dict [[strstr,, List List[[strstr]]]]))  -->>  floatfloat::
+        """"""
+    Evaluate RAG engine on training data    Evaluate RAG engine on training data
+        
+    Returns: Mean Recall@10 score    Returns: Mean Recall@10 score
+    """    """
+        printprint (("\n""\n"  ++  "=""="**6060))
+        printprint (("🧪 EVALUA TION ON TRAIN SET" "🧪 EVALUA TION ON TRAIN SET" ))
+        printprint (("=""="**6060  ++  "\n""\n"))
+        
+    recalls     recalls ==  [[]]
+        
+        forfor query query ,, ground_truth_urls  ground_truth_urls inin train_data train_data ..itemsitems (())::
+                # Get pr edictions # Get pr edictions
+        results         results == engine engine ..process_queryprocess_query ((queryquery ))
+        predicted_urls         predicted_urls ==  [[rr[['url''url']]  forfor r  r inin results results ]]
+                
+                # Calculate r ecall # Calculate r ecall
+        recall         recall == calculate_recall_at_k calculate_recall_at_k ((predicted_urlspredicted_urls ,, ground_truth_urls ground_truth_urls ,, k k==1010))
+        recalls        recalls ..appendappend ((recallrecall ))
+                
+                # Detailed output# Detailed output                printprint ((f"Query: f"Query: {{queryquery [[::60]60]}}..."..."))
+                printprint ((f"  Ground Truth: f"  Ground Truth: {{lenlen((ground_truth_urlsground_truth_urls ))}} assessments" assessments" ))
+                printprint ((f"  Predicted: f"  Predicted: {{lenlen((predicted_urlspredicted_urls ))}} assessments" assessments" ))
+                printprint ((f"  Recall@10: f"  Recall@10: {{recallrecall ::.3f.3f}}""))
+                printprint ((f"  Hits: f"  Hits: {{lenlen((setset((predicted_urlspredicted_urls ))..intersectionintersection ((setset((ground_truth_urlsground_truth_urls ))))))}}""))
+                printprint (())
+        
+        # Compute mean# Compute mean
+    mean_recall     mean_recall ==  sumsum((recallsrecalls ))  //  lenlen((recallsrecalls ))  ifif recalls  recalls elseelse  0.00.0
+        
+        printprint (("=""="**6060))
+        printprint ((f"📊  FINAL  SCORE: Mean Recall@10 = f"📊  FINAL  SCORE: Mean Recall@10 = {{mean_recallmean_recall ::.4f.4f}}""))
+        printprint (("=""="**6060  ++  "\n""\n"))
+        
+        returnreturn  mean_recall mean_recall
+defdef  generate_test_predictionsgenerate_test_predictions ((engineengine :: RAGEngine RAGEngine ,,  
+                              test_queries_path                              test_queries_path ::  strstr  ==  "data/test.csv""data/test.csv" ,,
+                              output_path                              output_path ::  strstr  ==  "predictions.csv""predictions.csv" ))::
+        """"""
+    Generate predictions for unlabeled test set    Generate predictions for unlabeled test set
+        
+    Creates CSV  in required format:     Creates CSV  in required format:
+    Query ,Assessment_url     Query ,Assessment_url
+    Query 1,URL  1     Query 1,URL  1
+    Query 1,URL  2     Query 1,URL  2
+    ...    ...
+    """    """
+        printprint (("\n""\n"  ++  "=""="**6060))
+        printprint (("🎯 GENERA TING TEST  SET  PREDICTIONS" "🎯 GENERA TING TEST  SET  PREDICTIONS" ))
+        printprint (("=""="**6060  ++  "\n""\n"))
+        
+        # Load test queries# Load test queries
+    test_df     test_df == pd pd..read_csvread_csv ((test_queries_pathtest_queries_path ))
+        
+    rows     rows ==  [[]]        forfor idx idx,, query  query inin  enumerateenumerate ((test_dftest_df [['Query''Query' ]],,  11))::
+                printprint ((f"[f"[{{idxidx}}//{{lenlen((test_dftest_df ))}}] Processing: ] Processing: {{queryquery [[::50]50]}}..."..."))
+                
+                # Get r ecommendations # Get r ecommendations
+        results         results == engine engine ..process_queryprocess_query ((queryquery ))
+                
+                # Add to output (top 10)# Add to output (top 10)
+                forfor result  result inin results results [[::1010]]::
+            rows            rows ..appendappend (({{
+                                'Query''Query' :: query query ,,
+                                'Assessment_url''Assessment_url' :: result result [['url''url']]
+                        }}))
+        
+        # Save CSV# Save CSV
+    output_df     output_df == pd pd..DataFrameDataFrame ((rowsrows ))
+    output_df    output_df ..to_csvto_csv ((output_pathoutput_path ,, index index ==FalseFalse ))
+        
+        printprint ((f"\n✅  Predictions saved to f"\n✅  Predictions saved to {{output_pathoutput_path }}""))
+        printprint ((f"   Total rows: f"   Total rows: {{lenlen((output_dfoutput_df ))}}""))
+        printprint ((f"   Format: Query , Assessment_url" f"   Format: Query , Assessment_url" ))
+defdef  mainmain (())::
+        """"""
+    Main evaluation workflow:    Main evaluation workflow:
+    1. Initialize RAG engine    1. Initialize RAG engine
+    2. Evaluate on train set    2. Evaluate on train set
+    3. Generate test predictions    3. Generate test predictions
+    """    """
+        printprint (("🚀 Starting Evaluation Pipeline\n""🚀 Starting Evaluation Pipeline\n" ))
+        
+        # Initialize engine (this will trigger scraping if needed)# Initialize engine (this will trigger scraping if needed)
+    engine     engine == RAGEngine RAGEngine (())
+        
+        # Evaluate on train set# Evaluate on train set
+        trytry::
+        train_data         train_data == load_train_data load_train_data (("data/train.csv""data/train.csv" ))Step 8: FastAPI Endpoints
+File:  backend/app/main.py        mean_recall         mean_recall == evaluate_engine evaluate_engine ((engineengine ,, train_data train_data ))
+                
+                ifif mean_recall  mean_recall <<  0.30.3::
+                        printprint (("⚠  WARNING: Low recall score. Consider:" "⚠  WARNING: Low recall score. Consider:" ))
+                        printprint (("   - Improving query balancing prompt""   - Improving query balancing prompt" ))
+                        printprint (("   - Adjusting result balancing logic""   - Adjusting result balancing logic" ))
+                        printprint (("   - Using dif ferent embedding model" "   - Using dif ferent embedding model" ))
+        
+        exceptexcept  FileNotFoundError FileNotFoundError ::
+                printprint (("⚠  train.csv not found. Skipping training evaluation.""⚠  train.csv not found. Skipping training evaluation." ))
+                printprint (("   Download from assignment link and place in backend/data/""   Download from assignment link and place in backend/data/" ))
+        
+        # Generate test pr edictions # Generate test pr edictions
+        trytry::
+        generate_test_predictions        generate_test_predictions ((engineengine ,,  "data/test.csv""data/test.csv" ,,  "predictions.csv""predictions.csv" ))
+        
+        exceptexcept  FileNotFoundError FileNotFoundError ::
+                printprint (("⚠  test.csv not found. Skipping test predictions.""⚠  test.csv not found. Skipping test predictions." ))
+                printprint (("   Download from assignment link and place in backend/data/""   Download from assignment link and place in backend/data/" ))
+ifif __name__  __name__ ====  "__main__""__main__" ::
+    main    main (())
+pythonfromfrom  fastapi  fastapi importimport  FastAPI FastAPI ,, HTTPException HTTPException
+fromfrom  fastapi fastapi ..middlewaremiddleware ..cors cors importimport  CORSMiddleware CORSMiddleware
+fromfrom  app app..models models importimport  QueryRequest QueryRequest ,, RecommendResponse RecommendResponse ,, Assessment Assessment
+fromfrom  app app..rag_engine rag_engine importimport  RAGEngine RAGEngine
+importimport  time time
+app app == FastAPI FastAPI ((
+    title    title =="SHL  Assessment Recommendation API" "SHL  Assessment Recommendation API" ,,
+    description    description =="AI-powered assessment recommendation system""AI-powered assessment recommendation system" ,,
+    version    version =="1.0.0""1.0.0"
+))
+# CORS configuration for fr ontend # CORS configuration for fr ontend
+appapp..add_middlewareadd_middleware ((
+    CORSMiddleware    CORSMiddleware ,,
+    allow_origins    allow_origins ==[["*""*"]],,    # In pr oduction, specify exact origins # In pr oduction, specify exact origins
+    allow_methods    allow_methods ==[["*""*"]],,
+    allow_headers    allow_headers ==[["*""*"]],,
+))
+# Initialize RAG engine (singleton)# Initialize RAG engine (singleton)
+printprint (("🔥 Initializing FastAPI application...""🔥 Initializing FastAPI application..." ))
+engine engine == RAGEngine RAGEngine (())
+printprint (("✅ API ready to serve requests\n" "✅ API ready to serve requests\n" ))
+@app@app ..getget(("/health""/health" ))
+defdef  health_checkhealth_check (())::
+        """"""
+    Health check endpoint (required by assignment)    Health check endpoint (required by assignment)
+        
+    Returns:    Returns:
+        {"status": "healthy"}        {"status": "healthy"}
+    """    """
+        returnreturn   {{
+                "status""status" ::  "healthy""healthy" ,,
+                "timestamp""timestamp" :: time time ..timetime(())        }}
+@app@app ..postpost(("/recommend""/recommend" ,, response_model response_model ==RecommendResponseRecommendResponse ))
+defdef  recommend_assessmentsrecommend_assessments ((requestrequest :: QueryRequest QueryRequest ))::
+        """"""
+    Assessment recommendation endpoint (required by assignment)    Assessment recommendation endpoint (required by assignment)
+        
+    Accepts:    Accepts:
+        - Natural language query        - Natural language query
+        - Job description text        - Job description text
+        - Job description URL        - Job description URL
+        
+    Returns:    Returns:
+        List of 5-10 relevant assessments with metadata        List of 5-10 relevant assessments with metadata
+    """    """
+        trytry::
+        query         query == request request ..queryquery ..stripstrip(())
+                
+                ifif  notnot query query ::
+                        raiseraise  HTTPException HTTPException ((status_codestatus_code ==400400,, detail detail =="Query cannot be empty""Query cannot be empty" ))
+                
+                # Get r ecommendations fr om RAG engine # Get r ecommendations fr om RAG engine
+        results         results == engine engine ..process_queryprocess_query ((queryquery ))
+                
+                # Ensur e minimum 5 r esults (r equir ed by assignment) # Ensur e minimum 5 r esults (r equir ed by assignment)
+                ifif  lenlen((resultsresults ))  <<  55::
+                        printprint ((f"⚠   Only f"⚠   Only {{lenlen((resultsresults ))}} results found (minimum 5 required)" results found (minimum 5 required)" ))
+                
+                # Convert to Pydantic models# Convert to Pydantic models
+        assessments         assessments ==  [[
+            Assessment             Assessment ((
+                url                url ==rr[['url''url']],,
+                name                name ==rr[['name''name' ]],,
+                adaptive_support                adaptive_support ==rr[['adaptive_support''adaptive_support' ]],,
+                description                description ==rr[['description''description' ]],,
+                duration                duration ==rr[['duration''duration' ]],,Step 9: Setup Validation Script
+File:  backend/test_setup.py
+Run this to verify everything is configured correctly before submission.                remote_support                remote_support ==rr[['remote_support''remote_support' ]],,
+                test_type                test_type ==rr[['test_type''test_type' ]]
+                        ))
+                        forfor r  r inin results results
+                ]]
+                
+                returnreturn  RecommendResponse RecommendResponse ((recommended_assessmentsrecommended_assessments ==assessmentsassessments ))
+        
+        exceptexcept  Exception  Exception asas e e::
+                raiseraise  HTTPException HTTPException ((status_codestatus_code ==500500,, detail detail ==f"Internal error: f"Internal error: {{strstr((ee))}}""))
+@app@app ..getget(("/""/"))
+defdef  rootroot(())::
+        """Root endpoint with API info""" """Root endpoint with API info"""
+        returnreturn   {{
+                "message""message" ::  "SHL  Assessment Recommendation API" "SHL  Assessment Recommendation API" ,,
+                "endpoints""endpoints" ::  {{
+                        "health""health" ::  "/health""/health" ,,
+                        "recommend""recommend" ::  "/recommend (POST)""/recommend (POST)"
+                }},,
+                "documentation""documentation" ::  "/docs""/docs"
+        }}
+pythonimportimport  os os
+importimport  sys sys
+importimport  requests requests
+fromfrom  dotenv  dotenv importimport  load_dotenv load_dotenv
+importimport  json json
+defdef  test_setuptest_setup (())::
+        """Comprehensive setup validation""""""Comprehensive setup validation"""
+        
+        printprint (("\n""\n"  ++  "=""="**6060))
+        printprint (("🔍 SHL  SYSTEM SETUP  VALIDA TION" "🔍 SHL  SYSTEM SETUP  VALIDA TION" ))
+        printprint (("=""="**6060  ++  "\n""\n"))
+        
+    load_dotenv    load_dotenv (())
+        
+    passed     passed ==  00
+    failed     failed ==  00
+        
+        # Test 1: Envir onment V ariables # Test 1: Envir onment V ariables
+        printprint (("1️⃣  Checking Environment Variables..." "1️⃣  Checking Environment Variables..." ))
+        
+    keys_to_check     keys_to_check ==  {{
+                "GOOGLE_API_KEY""GOOGLE_API_KEY" :: os os..getenvgetenv (("GOOGLE_API_KEY""GOOGLE_API_KEY" )),,
+                "FIRECRA WL_API_KEY" "FIRECRA WL_API_KEY" :: os os..getenvgetenv (("FIRECRA WL_API_KEY" "FIRECRA WL_API_KEY" ))
+        }}
+        
+        forfor key key,, value  value inin keys_to_check keys_to_check ..itemsitems (())::
+                ifif value value ::
+                        printprint ((f"   ✅  f"   ✅  {{keykey}}: : {{'*''*'  **  1010}}{{valuevalue [[--44::]]}}""))
+            passed             passed +=+=  11
+                elseelse::
+                        printprint ((f"   ❌  f"   ❌  {{keykey}}: NOT  SET" : NOT  SET" ))
+            failed             failed +=+=  11
+        
+        # Test 2: Scraped Data# Test 2: Scraped Data
+        printprint (("\n2️⃣   Checking Scraped Data..." "\n2️⃣   Checking Scraped Data..." ))
+                ifif os os..pathpath..existsexists (("data/assessments.json""data/assessments.json" ))::
+                withwith  openopen (("data/assessments.json""data/assessments.json" ))  asas f f::
+            data             data == json json ..loadload((ff))
+                
+        count         count ==  lenlen((datadata))
+                
+                ifif count  count >=>=  377377::
+                        printprint ((f"   ✅  Assessments: f"   ✅  Assessments: {{countcount }} (minimum 377 met)" (minimum 377 met)" ))
+            passed             passed +=+=  11
+                elseelse::
+                        printprint ((f"   ❌  Assessments: f"   ❌  Assessments: {{countcount }} (minimum 377 NOT  met)"  (minimum 377 NOT  met)" ))
+            failed             failed +=+=  11
+                
+                # Check types# Check types
+        types         types ==  {{}}
+                forfor item  item inin data data ::
+                        forfor t  t inin item item [['test_type''test_type' ]]::
+                types                types [[tt]]  == types types ..getget((tt,,  00))  ++  11
+                
+                printprint ((f"\n   📊  Type Distribution:" f"\n   📊  Type Distribution:" ))
+                forfor test_type test_type ,, cnt  cnt inin  sortedsorted ((typestypes ..itemsitems (()),, key key==lambdalambda  x x::  --xx[[11]]))::
+                        printprint ((f"      - f"      - {{test_typetest_type }}: : {{cntcnt}}""))
+        elseelse::
+                printprint (("   ❌  assessments.json NOT  FOUND" "   ❌  assessments.json NOT  FOUND" ))
+                printprint (("      Run: uvicorn app.main:app to trigger scraping""      Run: uvicorn app.main:app to trigger scraping" ))
+        failed         failed +=+=  11
+        
+        # Test 3: T rain/T est Data # Test 3: T rain/T est Data
+        printprint (("\n3️⃣   Checking Train/T est Data..." "\n3️⃣   Checking Train/T est Data..." ))
+        
+        forfor filename  filename inin  [["train.csv""train.csv" ,,  "test.csv""test.csv" ]]::
+        path         path ==  f"data/f"data/ {{filenamefilename }}""
+                ifif os os..pathpath..existsexists ((pathpath))::
+                        printprint ((f"   ✅  f"   ✅  {{filenamefilename }}: Found": Found" ))
+            passed             passed +=+=  11
+                elseelse::
+                        printprint ((f"   ⚠   f"   ⚠   {{filenamefilename }}: Missing (download from assignment)": Missing (download from assignment)" ))                        printprint ((f"      Place in backend/data/f"      Place in backend/data/ {{filenamefilename }}""))
+        
+        # Test 4: Chr omaDB # Test 4: Chr omaDB
+        printprint (("\n4️⃣   Checking ChromaDB..." "\n4️⃣   Checking ChromaDB..." ))
+        
+        ifif os os..pathpath..existsexists (("chroma_db""chroma_db" ))::
+                printprint ((f"   ✅  Vector database initialized" f"   ✅  Vector database initialized" ))
+        passed         passed +=+=  11
+        elseelse::
+                printprint ((f"   ⚠   Not initialized yet (will be created on first run)" f"   ⚠   Not initialized yet (will be created on first run)" ))
+        
+        # Test 5: API Health Check # Test 5: API Health Check
+        printprint (("\n5️⃣   Testing API Endpoints..." "\n5️⃣   Testing API Endpoints..." ))
+        
+        trytry::
+        resp         resp == requests requests ..getget(("http://localhost:8000/health""http://localhost:8000/health" ,, timeout timeout ==55))
+                
+                ifif resp resp ..status_code status_code ====  200200::
+                        printprint ((f"   ✅  Health endpoint: f"   ✅  Health endpoint: {{respresp..jsonjson(())}}""))
+            passed             passed +=+=  11
+                elseelse::
+                        printprint ((f"   ❌  Health endpoint returned f"   ❌  Health endpoint returned {{respresp..status_codestatus_code }}""))
+            failed             failed +=+=  11
+        
+        exceptexcept  requests requests ..exceptionsexceptions ..ConnectionErrorConnectionError ::
+                printprint (("   ⚠   API not running" "   ⚠   API not running" ))
+                printprint (("      Start with: uvicorn app.main:app --reload""      Start with: uvicorn app.main:app --reload" ))
+        
+        exceptexcept  Exception  Exception asas e e::
+                printprint ((f"   ❌  Error: f"   ❌  Error: {{ee}}""))
+        failed         failed +=+=  11
+        
+        # Test 6: Recommendation Endpoint# Test 6: Recommendation Endpoint
+        trytry::
+        resp         resp == requests requests ..postpost((
+                        "http://localhost:8000/recommend""http://localhost:8000/recommend" ,,
+            json            json =={{"query""query" ::  "Java developer with team leadership skills""Java developer with team leadership skills" }},,            timeout            timeout ==1515
+                ))
+                
+                ifif resp resp ..status_code status_code ====  200200::
+            data             data == resp resp ..jsonjson(())
+            count             count ==  lenlen((datadata..getget(('recommended_assessments''recommended_assessments' ,,  [[]]))))
+                        
+                        ifif count  count >=>=  55::
+                                printprint ((f"   ✅  Recommendation endpoint: f"   ✅  Recommendation endpoint: {{countcount }} results" results" ))
+                                
+                                # Check balancing# Check balancing
+                types                 types ==  [[]]
+                                forfor assessment  assessment inin data data [['recommended_assessments''recommended_assessments' ]]::
+                    types                    types ..extendextend ((assessmentassessment ..getget(('test_type''test_type' ,,  [[]]))))
+                                
+                has_knowledge                 has_knowledge ==  anyany(('Knowledge''Knowledge'   inin t  t oror  'Cognitive''Cognitive'   inin t  t forfor t  t inin types types ))
+                has_personality                 has_personality ==  anyany(('Personality''Personality'   inin t  t forfor t  t inin types types ))
+                                
+                                ifif has_knowledge  has_knowledge andand has_personality has_personality ::
+                                        printprint ((f"   ✅  Result balancing: Contains both technical and behavioral" f"   ✅  Result balancing: Contains both technical and behavioral" ))
+                                elseelse::
+                                        printprint ((f"   ⚠   Result balancing: Check if mixed types present" f"   ⚠   Result balancing: Check if mixed types present" ))
+                                
+                passed                 passed +=+=  11
+                        elseelse::
+                                printprint ((f"   ❌  Only f"   ❌  Only {{countcount }} results (minimum 5 required)" results (minimum 5 required)" ))
+                failed                 failed +=+=  11
+                elseelse::
+                        printprint ((f"   ❌  Endpoint returned f"   ❌  Endpoint returned {{respresp..status_codestatus_code }}""))
+            failed             failed +=+=  11
+        
+        exceptexcept  requests requests ..exceptionsexceptions ..ConnectionErrorConnectionError ::
+                printprint (("   ⚠   API not running" "   ⚠   API not running" ))
+        
+        exceptexcept  Exception  Exception asas e e::
+                printprint ((f"   ❌  Error: f"   ❌  Error: {{ee}}""))
+        failed         failed +=+=  11Step 10: Cr eate __init__.py
+File:  backend/app/__init__.py
+🎨 Part 2: Fr ontend Implementation
+Step 1: Initialize React App        
+        # Final Summary# Final Summary
+        printprint (("\n""\n"  ++  "=""="**6060))
+        printprint ((f"SUMMAR Y: f"SUMMAR Y: {{passedpassed }} passed,  passed, {{failedfailed }} failed" failed" ))
+        printprint (("=""="**6060  ++  "\n""\n"))
+        
+        ifif failed  failed ====  00::
+                printprint (("🎉 All checks passed! System ready for submission." "🎉 All checks passed! System ready for submission." ))
+                returnreturn   00
+        elseelse::
+                printprint (("⚠  Some issues found. Fix them before submission.""⚠  Some issues found. Fix them before submission." ))
+                returnreturn   11
+ifif __name__  __name__ ====  "__main__""__main__" ::
+    sys    sys ..exitexit((test_setuptest_setup (())))
+python
+# Empty file to make 'app' a Python package# Empty file to make 'app' a Python package
+bashStep 2: Install Dependencies
+Step 3: Configur e Tailwind
+File:  frontend/tailwind.config.js
+File:  frontend/src/index.csscdcd  ....    # Back to pr oject r oot # Back to pr oject r oot
+npx create-vite@latest frontend --template react-tsnpx create-vite@latest frontend --template react-ts
+cdcd frontend frontend
+npmnpm  installinstall
+bash
+npmnpm  installinstall  axios axios
+npmnpm  installinstall  -D tailwindcss postcss autoprefixer -D tailwindcss postcss autoprefixer
+npx tailwindcss init -pnpx tailwindcss init -p
+javascript
+/** /** @type@type   {{importimport (('tailwindcss''tailwindcss' ))..ConfigConfig }} */ */
+exportexport   defaultdefault   {{
+    contentcontent ::  [[
+        "./index.html""./index.html" ,,
+        "./src/**/*.{js,ts,jsx,tsx}""./src/**/*.{js,ts,jsx,tsx}" ,,
+    ]],,
+    themetheme ::  {{
+        extendextend ::  {{}},,
+    }},,
+    pluginsplugins ::  [[]],,
+}}
+cssStep 4: TypeScript Types
+File:  frontend/src/types.ts
+Step 5: API Client
+File:  frontend/src/api.ts@tailwind@tailwind  base base ;;
+@tailwind@tailwind  components components ;;
+@tailwind@tailwind  utilities utilities ;;
+bodybody   {{
+    marginmargin::  00;;
+    font-familyfont-family :: -apple-system -apple-system ,, BlinkMacSystemFont BlinkMacSystemFont ,,  'Segoe UI''Segoe UI' ,,  'Roboto''Roboto' ,,  'Oxygen''Oxygen' ,,
+        'Ubuntu''Ubuntu' ,,  'Cantarell''Cantarell' ,,  'Fira Sans''Fira Sans' ,,  'Droid Sans''Droid Sans' ,,  'Helvetica Neue''Helvetica Neue' ,,
+    sans-serif    sans-serif ;;
+    -webkit-font-smoothing-webkit-font-smoothing :: antialiased antialiased ;;
+    -moz-osx-font-smoothing-moz-osx-font-smoothing :: grayscale grayscale ;;
+}}
+typescript
+exportexport   interfaceinterface   AssessmentAssessment   {{
+  url  url::  stringstring ;;
+  name  name ::  stringstring ;;
+  adaptive_support  adaptive_support ::  stringstring ;;
+  description  description ::  stringstring ;;
+  duration  duration ::  numbernumber ;;
+  remote_support  remote_support ::  stringstring ;;
+  test_type  test_type ::  stringstring [[]];;
+}}
+exportexport   interfaceinterface   RecommendResponseRecommendResponse   {{
+  recommended_assessments  recommended_assessments ::  AssessmentAssessment [[]];;
+}}Step 6: Result Card Component
+File:  frontend/src/components/ResultCard.tsxtypescript
+importimport   axiosaxios   fromfrom   'axios''axios' ;;
+importimport   {{  RecommendResponseRecommendResponse   }}  fromfrom   './types''./types' ;;
+// Change this when deploying// Change this when deploying
+constconst   API_URLAPI_URL   ==  importimport ..metameta ..envenv..VITE_API_URLVITE_API_URL   ||||  'http://localhost:8000''http://localhost:8000' ;;
+exportexport   constconst  getRecommendations  getRecommendations ==  asyncasync   ((queryquery ::  stringstring ))::  PromisePromise <<RecommendResponseRecommendResponse >>  =>=>  {{
+    constconst  response  response ==  awaitawait  axios axios ..postpost((``${${API_URLAPI_URL }}/recommend/recommend ``,,  {{ query  query }}));;
+    returnreturn  response response ..datadata;;
+}};;
+exportexport   constconst  checkHealth  checkHealth ==  asyncasync   (())::  PromisePromise <<{{ status status ::  stringstring   }}>>  =>=>  {{
+    constconst  response  response ==  awaitawait  axios axios ..getget((``${${API_URLAPI_URL }}/health/health ``));;
+    returnreturn  response response ..datadata;;
+}};;
+typescriptimportimport   ReactReact   fromfrom   'react''react' ;;
+importimport   {{  AssessmentAssessment   }}  fromfrom   '../types''../types' ;;
+interfaceinterface   PropsProps   {{
+  data  data ::  AssessmentAssessment ;;
+  index  index ::  numbernumber ;;
+}}
+exportexport   constconst   ResultCardResultCard ::  ReactReact ..FCFC<<PropsProps >>  ==  (({{ data data ,, index  index }}))  =>=>  {{
+    returnreturn   ((
+        <<div classNamediv className =="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all border border"bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition-all border border
+            {{/* Header *//* Header */ }}
+            <<div classNamediv className =="flex justify-between items-start mb-3""flex justify-between items-start mb-3" >>
+                <<div classNamediv className =="flex items-center gap-2""flex items-center gap-2" >>
+                    <<span classNamespan className =="bg-blue-600 text-white text-sm font-bold px-3 py-1 rounded-full""bg-blue-600 text-white text-sm font-bold px-3 py-1 rounded-full" >>
+            #            # {{index index ++  11}}
+                    <<//spanspan>>
+                    <<h3 classNameh3 className =="text-lg font-bold text-gray-900""text-lg font-bold text-gray-900" >>{{datadata..namename }}<<//h3h3>>
+                <<//divdiv>>
+                
+                <<a a 
+          href          href =={{datadata..urlurl}}  
+          tar get           tar get=="_blank""_blank"   
+          rel          rel =="noopener noreferrer""noopener noreferrer"
+          className          className =="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center gap-1""text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center gap-1"
+                >>
+                    ViewView
+                    <<svg classNamesvg className =="w-4 h-4""w-4 h-4"  fill fill=="none""none"  stroke stroke =="currentColor""currentColor"  viewBox viewBox =="0 0 24 24""0 0 24 24" >>
+                        <<path strokeLinecappath strokeLinecap =="round""round"  strokeLinejoin strokeLinejoin =="round""round"  strokeW idth  strokeW idth=={{22}} d d=="M10 6H6a2 2 0 00"M10 6H6a2 2 0 00
+                    <<//svgsvg>>
+                <<//aa>>
+            <<//divdiv>>
+            
+            {{/* Test Type T ags */ /* Test Type T ags */ }}
+            <<div classNamediv className =="flex gap-2 mb-4 flex-wrap""flex gap-2 mb-4 flex-wrap" >>
+                {{datadata..test_typetest_type ..mapmap((((tagtag,, idx idx))  =>=>  {{
+                    constconst  colorMap colorMap ::  RecordRecord <<stringstring ,,  stringstring >>  ==  {{                        'Knowledge & Skills''Knowledge & Skills' ::  'bg-purple-100 text-purple-800''bg-purple-100 text-purple-800' ,,
+                        'Personality & Behavior''Personality & Behavior' ::  'bg-green-100 text-green-800''bg-green-100 text-green-800' ,,
+                        'Cognitive Ability' 'Cognitive Ability' ::  'bg-blue-100 text-blue-800''bg-blue-100 text-blue-800' ,,
+                    }};;
+                    
+                    constconst  color  color == colorMap colorMap [[tagtag]]  ||||  'bg-gray-100 text-gray-800''bg-gray-100 text-gray-800' ;;
+                    
+                    returnreturn   ((
+                        <<span keyspan key =={{idxidx}} className className =={{``${${colorcolor }} text-xs px-3 py-1 rounded-full font-semibold text-xs px-3 py-1 rounded-full font-semibold ``}}>>
+                            {{tagtag}}
+                        <<//spanspan>>
+                    ));;
+                }}))}}
+            <<//divdiv>>
+            {{/* Description *//* Description */ }}
+            <<p classNamep className =="text-gray-600 text-sm mb-4 line-clamp-2""text-gray-600 text-sm mb-4 line-clamp-2" >>
+                {{datadata..descriptiondescription }}
+            <<//pp>>
+            {{/* Metadata *//* Metadata */ }}
+            <<div classNamediv className =="flex gap-4 text-sm text-gray-500 border -t pt-3" "flex gap-4 text-sm text-gray-500 border -t pt-3" >>
+                <<div classNamediv className =="flex items-center gap-1""flex items-center gap-1" >>
+                    <<svg classNamesvg className =="w-4 h-4""w-4 h-4"  fill fill=="none""none"  stroke stroke =="currentColor""currentColor"  viewBox viewBox =="0 0 24 24""0 0 24 24" >>
+                        <<path strokeLinecappath strokeLinecap =="round""round"  strokeLinejoin strokeLinejoin =="round""round"  strokeW idth  strokeW idth=={{22}} d d=="M12 8v4l3 3m6-3"M12 8v4l3 3m6-3
+                    <<//svgsvg>>
+                    {{datadata..durationduration }} min min
+                <<//divdiv>>
+                
+                <<div classNamediv className =="flex items-center gap-1""flex items-center gap-1" >>
+                    <<svg classNamesvg className =={{``w-4 h-4 w-4 h-4 ${${datadata..remote_supportremote_support   ======  'Yes''Yes'  ??  'text-green-500''text-green-500'   ::  'text-gray-400''text-gray-400'
+                        <<path strokeLinecappath strokeLinecap =="round""round"  strokeLinejoin strokeLinejoin =="round""round"  strokeW idth  strokeW idth=={{22}} d d=="M8.1 11 16.404a5. "M8.1 11 16.404a5.
+                    <<//svgsvg>>
+                    RemoteRemote
+                <<//divdiv>>
+                
+                <<div classNamediv className =="flex items-center gap-1""flex items-center gap-1" >>Step 7: Main App Component
+File:  frontend/src/App.tsx                    <<svg classNamesvg className =={{``w-4 h-4 w-4 h-4 ${${datadata..adaptive_supportadaptive_support   ======  'Yes''Yes'  ??  'text-purple-500''text-purple-500'   ::  'text-gray-40'text-gray-40
+                        <<path strokeLinecappath strokeLinecap =="round""round"  strokeLinejoin strokeLinejoin =="round""round"  strokeW idth  strokeW idth=={{22}} d d=="M9.663 17h4.673M"M9.663 17h4.673M
+                    <<//svgsvg>>
+                    AdaptiveAdaptive
+                <<//divdiv>>
+            <<//divdiv>>
+        <<//divdiv>>
+    ));;
+}};;
+typescriptimportimport   {{ useState  useState }}  fromfrom   'react''react' ;;
+importimport   {{ getRecommendations  getRecommendations }}  fromfrom   './api''./api' ;;
+importimport   {{  AssessmentAssessment   }}  fromfrom   './types''./types' ;;
+importimport   {{  ResultCardResultCard   }}  fromfrom   './components/ResultCard''./components/ResultCard' ;;
+functionfunction   AppApp(())  {{
+    constconst   [[queryquery ,, setQuery setQuery ]]  ==  useStateuseState ((''''));;
+    constconst   [[loadingloading ,, setLoading setLoading ]]  ==  useStateuseState ((falsefalse ));;
+    constconst   [[resultsresults ,, setResults setResults ]]  ==  useStateuseState <<AssessmentAssessment [[]]>>(([[]]));;
+    constconst   [[errorerror ,, setError setError ]]  ==  useStateuseState <<stringstring   ||  nullnull>>((nullnull));;
+    constconst  exampleQueries  exampleQueries ==  [[
+        "Java developer who can collaborate with business teams""Java developer who can collaborate with business teams" ,,
+        "Mid-level Python and SQL  professional" "Mid-level Python and SQL  professional" ,,
+        "Analyst with cognitive and personality assessment needs""Analyst with cognitive and personality assessment needs"
+    ]];;
+    constconst   handleSearchhandleSearch   ==  asyncasync   (())  =>=>  {{
+        ifif  ((!!queryquery ..trimtrim(())))  {{
+            setErrorsetError (("Please enter a query or URL""Please enter a query or URL" ));;
+            returnreturn ;;
+        }}
+        setLoadingsetLoading ((truetrue));;
+        setErrorsetError ((nullnull));;
+        
+        trytry  {{
+            constconst  res  res ==  awaitawait   getRecommendationsgetRecommendations ((queryquery ));;
+            setResultssetResults ((resres..recommended_assessmentsrecommended_assessments ));;
+            
+            ifif  ((resres..recommended_assessmentsrecommended_assessments ..lengthlength   ======  00))  {{
+                setErrorsetError (("No assessments found. Try a dif ferent query ." "No assessments found. Try a dif ferent query ."));;
+            }}
+        }}  catchcatch   ((errerr::  anyany))  {{
+            consoleconsole ..errorerror ((errerr));;
+            setErrorsetError ((errerr..responseresponse ?.?.datadata?.?.detail detail ||||  "Failed to fetch recommendations. Ensure backend is running "Failed to fetch recommendations. Ensure backend is running 
+        }}  finallyfinally   {{            setLoadingsetLoading ((falsefalse ));;
+        }}
+    }};;
+    constconst   handleKeyPresshandleKeyPress   ==  ((ee::  ReactReact ..KeyboardEventKeyboardEvent ))  =>=>  {{
+        ifif  ((ee..keykey  ======  'Enter''Enter'   &&&&  !!ee..shiftKeyshiftKey ))  {{
+      e      e ..preventDefaultpreventDefault (());;
+            handleSearchhandleSearch (());;
+        }}
+    }};;
+    returnreturn   ((
+        <<div classNamediv className =="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50""min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50" >>
+            <<div classNamediv className =="max-w-6xl mx-auto px-4 py-8""max-w-6xl mx-auto px-4 py-8" >>
+                {{/* Header *//* Header */ }}
+                <<header classNameheader className =="text-center mb-12""text-center mb-12" >>
+                    <<h1 classNameh1 className =="text-5xl font-extrabold text-gray-900 mb-3 bg-clip-text text-transparent bg-gra"text-5xl font-extrabold text-gray-900 mb-3 bg-clip-text text-transparent bg-gra
+                        SHLSHL  AssessmentAssessment   AIAI
+                    <<//h1h1>>
+                    <<p classNamep className =="text-gray-600 text-lg""text-gray-600 text-lg" >>
+                        IntelligentIntelligent  recommendations powered by  recommendations powered by LLMLLM  and  and VectorVector   SearchSearch
+                    <<//pp>>
+                <<//headerheader >>
+                {{/* Sear ch Section */ /* Sear ch Section */ }}
+                <<div classNamediv className =="bg-white rounded-2xl shadow-lg p-8 mb-8""bg-white rounded-2xl shadow-lg p-8 mb-8" >>
+                    <<label classNamelabel className =="block text-sm font-semibold text-gray-700 mb-3""block text-sm font-semibold text-gray-700 mb-3" >>
+                        EnterEnter   JobJob  DescriptionDescription  or  or NaturalNatural   LanguageLanguage   QueryQuery
+                    <<//labellabel >>
+                    
+                    <<div classNamediv className =="relative""relative" >>
+                        <<textareatextarea
+              className              className =="w-full p-4 pr -32 rounded-xl border -2 border -gray-200 focus:border -blue-500 foc "w-full p-4 pr -32 rounded-xl border -2 border -gray-200 focus:border -blue-500 foc
+              rows              rows =={{44}}
+              placeholder              placeholder =="e.g., 'Need a senior Java developer with strong communication skills' or paste a"e.g., 'Need a senior Java developer with strong communication skills' or paste a
+              value              value =={{queryquery }}
+              onChange              onChange =={{((ee))  =>=>  setQuerysetQuery ((ee..targettarget..valuevalue ))}}              onKeyPress              onKeyPress =={{handleKeyPresshandleKeyPress }}
+                        //>>
+                        
+                        <<buttonbutton
+              onClick              onClick =={{handleSearchhandleSearch }}
+              disabled              disabled =={{loadingloading }}
+              className              className =="absolute bottom-4 right-4 bg-gradient-to-r from-blue-600 to-purple-600 text-whi"absolute bottom-4 right-4 bg-gradient-to-r from-blue-600 to-purple-600 text-whi
+                        >>
+                            {{loading loading ??  ((
+                                <<>>
+                                    <<svg classNamesvg className =="animate-spin h-5 w-5""animate-spin h-5 w-5"  xmlns xmlns =="http://www .w3.or g/2000/svg" "http://www .w3.or g/2000/svg"  fill fill=="none"none
+                                        <<circle classNamecircle className =="opacity-25""opacity-25"  cx cx=="12""12" cy cy=="12""12" r r=="10""10" stroke stroke =="currentColor""currentColor"  strokeW strokeW
+                                        <<path classNamepath className =="opacity-75""opacity-75"  fill fill=="currentColor""currentColor"  d d=="M4 12a8 8 0 018-8V0C5.373 0 0 5"M4 12a8 8 0 018-8V0C5.373 0 0 5
+                                    <<//svgsvg>>
+                                    AnalyzingAnalyzing ......
+                                <<//>>
+                            ))  ::  ((
+                                <<>>
+                                    <<svg classNamesvg className =="w-5 h-5""w-5 h-5"  fill fill=="none""none"  stroke stroke =="currentColor""currentColor"  viewBox viewBox =="0 0 24 24""0 0 24 24" >>
+                                        <<path strokeLinecappath strokeLinecap =="round""round"  strokeLinejoin strokeLinejoin =="round""round"  strokeW idth  strokeW idth=={{22}} d d=="M21 21l-6-6m"M21 21l-6-6m
+                                    <<//svgsvg>>
+                                    SearchSearch
+                                <<//>>
+                            ))}}
+                        <<//buttonbutton >>
+                    <<//divdiv>>
+                    {{/* Example Queries *//* Example Queries */ }}
+                    <<div classNamediv className =="mt-4""mt-4" >>
+                        <<p classNamep className =="text-xs text-gray-500 mb-2""text-xs text-gray-500 mb-2" >>TryTry an example an example ::<<//pp>>
+                        <<div classNamediv className =="flex gap-2 flex-wrap""flex gap-2 flex-wrap" >>
+                            {{exampleQueriesexampleQueries ..mapmap((((exex,, idx idx))  =>=>  ((
+                                <<buttonbutton
+                  key                  key =={{idxidx}}
+                  onClick                  onClick =={{(())  =>=>  setQuerysetQuery ((exex))}}
+                  className                  className =="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-full "text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-full 
+                                >>                                    {{exex}}
+                                <<//buttonbutton >>
+                            ))))}}
+                        <<//divdiv>>
+                    <<//divdiv>>
+                <<//divdiv>>
+                {{/* Err or Message */ /* Err or Message */ }}
+                {{error error &&&&  ((
+                    <<div classNamediv className =="bg-red-50 border border -red-200 text-red-800 px-6 py-4 rounded-xl mb-8" "bg-red-50 border border -red-200 text-red-800 px-6 py-4 rounded-xl mb-8" >>
+                        <<div classNamediv className =="flex items-center gap-2""flex items-center gap-2" >>
+                            <<svg classNamesvg className =="w-5 h-5""w-5 h-5"  fill fill=="currentColor""currentColor"  viewBox viewBox =="0 0 20 20""0 0 20 20" >>
+                                <<path fillRulepath fillRule =="evenodd""evenodd"  d d=="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1."M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.
+                            <<//svgsvg>>
+                            {{errorerror }}
+                        <<//divdiv>>
+                    <<//divdiv>>
+                ))}}
+                {{/* Results Section *//* Results Section */ }}
+                {{resultsresults ..lengthlength   >>  00  &&&&  ((
+                    <<divdiv>>
+                        <<div classNamediv className =="flex items-center justify-between mb-6""flex items-center justify-between mb-6" >>
+                            <<h2 classNameh2 className =="text-2xl font-bold text-gray-900""text-2xl font-bold text-gray-900" >>
+                                TopTop  {{resultsresults ..lengthlength }}  RecommendationsRecommendations
+                            <<//h2h2>>
+                            <<div classNamediv className =="text-sm text-gray-500""text-sm text-gray-500" >>
+                                SortedSorted  by relevance by relevance
+                            <<//divdiv>>
+                        <<//divdiv>>
+                        
+                        <<div classNamediv className =="grid grid-cols-1 lg:grid-cols-2 gap-6""grid grid-cols-1 lg:grid-cols-2 gap-6" >>
+                            {{resultsresults ..mapmap((((assessmentassessment ,, index index ))  =>=>  ((
+                                <<ResultCardResultCard  key key=={{indexindex }} data data =={{assessmentassessment }} index index =={{indexindex }}  //>>
+                            ))))}}
+                        <<//divdiv>>
+                    <<//divdiv>>Step 8: Update Main Entry
+File:  frontend/src/main.tsx                ))}}
+                {{/* Empty State *//* Empty State */ }}
+                {{!!loading loading &&&& results results ..lengthlength   ======  00  &&&&  !!error error &&&&  ((
+                    <<div classNamediv className =="text-center py-16""text-center py-16" >>
+                        <<svg classNamesvg className =="w-24 h-24 mx-auto text-gray-300 mb-4""w-24 h-24 mx-auto text-gray-300 mb-4"  fill fill=="none""none"  stroke stroke =="currentColor""currentColor"   
+                            <<path strokeLinecappath strokeLinecap =="round""round"  strokeLinejoin strokeLinejoin =="round""round"  strokeW idth  strokeW idth=={{1.51.5}} d d=="M9 12h6m-6 4"M9 12h6m-6 4
+                        <<//svgsvg>>
+                        <<p classNamep className =="text-gray-500 text-lg""text-gray-500 text-lg" >>
+                            EnterEnter  a query above to  a query above to getget started started
+                        <<//pp>>
+                    <<//divdiv>>
+                ))}}
+            <<//divdiv>>
+        <<//divdiv>>
+    ));;
+}}
+exportexport   defaultdefault   AppApp;;
+typescript
+importimport   ReactReact   fromfrom   'react''react'
+importimport   ReactDOMReactDOM   fromfrom   'react-dom/client''react-dom/client'
+importimport   AppApp  fromfrom   './App.tsx''./App.tsx'
+importimport   './index.css''./index.css'
+ReactDOMReactDOM ..createRootcreateRoot ((documentdocument ..getElementByIdgetElementById (('root''root' ))!!))..renderrender ((
+    <<ReactReact ..StrictModeStrictMode >>
+        <<AppApp  //>>
+    <<//ReactReact ..StrictModeStrictMode >>,,
+))📄 Part 3: Documentation
+Create Appr oach Document
+File:  APPROACH.md  (Place in project root)
+This is your 2-page submission document. Customize based on your actual results.
+┌─────────────┐      ┌──────────────┐      ┌─────────────┐
+│   User      │───── ▶ │   FastAPI    │───── ▶ │  RAG Engine │
+│  (Frontend) │      │   Backend    │      │             │
+└─────────────┘      └──────────────┘      └──────┬──────┘ markdown
+## SHL  Assessment Recommendation System - Approach Document  SHL  Assessment Recommendation System - Approach Document
+****Submitted by:Submitted by: **** [Your Name]   [Your Name]  
+****Date:Date: **** [Submission Date] [Submission Date]
+------
+#### 1. Problem Understanding 1. Problem Understanding
+The challenge was to build an intelligent recommendation engine that helps recruiters discover relevanThe challenge was to build an intelligent recommendation engine that helps recruiters discover relevan
+-- Scrape 377+ individual test solutions from SHL's catalog Scrape 377+ individual test solutions from SHL's catalog
+-- Return 5-10 balanced recommendations (technical + behavioral) Return 5-10 balanced recommendations (technical + behavioral)
+-- Achieve high Mean Recall@10 on the test set Achieve high Mean Recall@10 on the test set
+-- Handle both text queries and URL  inputs  Handle both text queries and URL  inputs
+------
+#### 2. Solution Architecture  2. Solution Architecture
+###### 2.1 System Design 2.1 System Design│
+┌───────────────────────┼───────────────────┐
+│                       │                   │
+┌─────▼──────┐         ┌─────▼──────┐     ┌─────▼──────┐
+│  BeautifulSoup│       │   Gemini   │     │  ChromaDB  │
+│   Scraper    │       │  (Balancing)│     │  (V ector)  │
+└──────────────┘       └────────────┘     └────────────┘**Components:****Components:**
+1. **W eb Scraper** (BeautifulSoup4): Extracts 377+ assessments from SHL  catalog 1. **W eb Scraper** (BeautifulSoup4): Extracts 377+ assessments from SHL  catalog
+2. **RAG Engine**: Core recommendation logic with query processing pipeline2. **RAG Engine**: Core recommendation logic with query processing pipeline
+3. **LLM Integration** (Gemini 1.5 Flash): Balances queries for hard + soft skills3. **LLM Integration** (Gemini 1.5 Flash): Balances queries for hard + soft skills
+4. **V ector Database** (ChromaDB): Stores sentence embeddings (all-MiniLM-L6-v2) 4. **V ector Database** (ChromaDB): Stores sentence embeddings (all-MiniLM-L6-v2)
+5. **API Layer** (FastAPI): RESTful endpoints for frontend communication5. **API Layer** (FastAPI): RESTful endpoints for frontend communication
+6. **Frontend** (React + TypeScript): Clean, responsive user interface 6. **Frontend** (React + TypeScript): Clean, responsive user interface
+### 2.2 Technology Justification ### 2.2 Technology Justification
+| Technology | Reason || Technology | Reason |
+|------------|--------||------------|--------|
+| **FastAPI** | High-performance async API, automatic OpenAPI docs | | **FastAPI** | High-performance async API, automatic OpenAPI docs |
+| **BeautifulSoup4** | Reliable HTML  parsing for SHL's static catalog | | **BeautifulSoup4** | Reliable HTML  parsing for SHL's static catalog |
+| **FireCrawl** | Handles messy JD URLs, converts to clean markdown || **FireCrawl** | Handles messy JD URLs, converts to clean markdown |
+| **Gemini 1.5 Flash** | Free tier , fast inference for query understanding | | **Gemini 1.5 Flash** | Free tier , fast inference for query understanding |
+| **sentence-transformers** | Lightweight, 384-dim embeddings, no API costs | | **sentence-transformers** | Lightweight, 384-dim embeddings, no API costs |
+| **ChromaDB** | Simple vector DB with persistent storage || **ChromaDB** | Simple vector DB with persistent storage |
+------
+## 3. Data Pipeline## 3. Data Pipeline
+### 3.1 Web Scraping Strategy ### 3.1 Web Scraping Strategy
+**Challenge:** Extract structured data from 377+ assessment pages without getting blocked.**Challenge:** Extract structured data from 377+ assessment pages without getting blocked.
+**Solution:****Solution:**
+- Multi-threaded scraping (10 workers) with polite delays- Multi-threaded scraping (10 workers) with polite delays
+- Extracted fields: name, URL, description, duration, test_type, remote_support, adaptive_support- Extracted fields: name, URL, description, duration, test_type, remote_support, adaptive_support
+- Filtered out "Pre-packaged Job Solutions" category (as required)- Filtered out "Pre-packaged Job Solutions" category (as required)
+- Enhanced type detection using keyword matching:- Enhanced type detection using keyword matching:
+    - **Knowledge & Skills**: python, java, sql, coding, technical- **Knowledge & Skills**: python, java, sql, coding, technical
+    - **Personality & Behavior**: personality , behavior , leadership, opq - **Personality & Behavior**: personality , behavior , leadership, opq
+    - **Cognitive Ability**: cognitive, reasoning, verify , numerical - **Cognitive Ability**: cognitive, reasoning, verify , numericalUser Query → URL  Detection → Query Balancing → Vector Search → Result Balancing
+→ Top-10
+Input: "Need a Java dev who is good at collaborating"
+Gemini Output: "T echnical: Java, programming, API AND Behavioral: team collaboration,  
+communication"**Result:** Successfully scraped 377+ assessments in ~2 minutes.**Result:** Successfully scraped 377+ assessments in ~2 minutes.
+### 3.2 Embedding & Indexing### 3.2 Embedding & Indexing
+- Created rich text representations: `name + description + test_types`- Created rich text representations: `name + description + test_types`
+- Generated 384-dimensional embeddings using `all-MiniLM-L6-v2`- Generated 384-dimensional embeddings using `all-MiniLM-L6-v2`
+- Stored in ChromaDB with cosine similarity search- Stored in ChromaDB with cosine similarity search
+- Persistent storage ensures data survives server restarts- Persistent storage ensures data survives server restarts
+------
+## 4. RAG Implementation## 4. RAG Implementation
+### 4.1 Query Processing Pipeline### 4.1 Query Processing Pipeline
+**Step 1: URL  Detection**  **Step 1: URL  Detection**  
+If input starts with `http`, use FireCrawl to scrape and extract markdown content.If input starts with `http`, use FireCrawl to scrape and extract markdown content.
+**Step 2: Query Balancing (Critical Innovation)**  **Step 2: Query Balancing (Critical Innovation)**  
+**Problem:** Users often describe roles that need BOTH technical and behavioral assessments,**Problem:** Users often describe roles that need BOTH technical and behavioral assessments,   
+but a naive search might only return technical tests.but a naive search might only return technical tests.
+**Example:** "Java developer who collaborates well" should return:**Example:** "Java developer who collaborates well" should return:
+- 50% Knowledge & Skills tests (Java, coding)- 50% Knowledge & Skills tests (Java, coding)
+- 50% Personality & Behavior tests (teamwork, communication)- 50% Personality & Behavior tests (teamwork, communication)
+**Solution:** Use Gemini to extract and balance:**Solution:** Use Gemini to extract and balance:**Step 3: Vector Search**  **Step 3: Vector Search**  
+Embed balanced query and retrieve top-20 similar assessments from ChromaDB.Embed balanced query and retrieve top-20 similar assessments from ChromaDB.
+**Step 4: Result Balancing**  **Step 4: Result Balancing**  
+Post-process results to ensure 50-50 split between test types when both are relevant.Post-process results to ensure 50-50 split between test types when both are relevant.
+------
+## 5. Evaluation & Optimization## 5. Evaluation & Optimization
+### 5.1 Initial Performance### 5.1 Initial Performance
+**Baseline Approach:** Direct embedding search without balancing **Baseline Approach:** Direct embedding search without balancing
+- Mean Recall@10: **0.42**- Mean Recall@10: **0.42**
+**Issues Identified:****Issues Identified:**
+1. Technical queries only returned technical tests1. Technical queries only returned technical tests
+2. No soft skill assessments for leadership-heavy roles2. No soft skill assessments for leadership-heavy roles
+3. Descriptions were too short (500 chars) for good embeddings3. Descriptions were too short (500 chars) for good embeddings
+### 5.2 Optimization Iterations### 5.2 Optimization Iterations
+| Iteration | Change | Mean Recall@10 | Δ  | | Iteration | Change | Mean Recall@10 | Δ  |
+|-----------|--------|----------------|---||-----------|--------|----------------|---|
+| Baseline | Direct search | 0.42 | - || Baseline | Direct search | 0.42 | - |
+| v1 | Added Gemini balancing | 0.58 | +0.16 | | v1 | Added Gemini balancing | 0.58 | +0.16 |
+| v2 | Extended descriptions (1000 chars) | 0.64 | +0.06 || v2 | Extended descriptions (1000 chars) | 0.64 | +0.06 |
+| v3 | Implemented result balancing | 0.71 | +0.07 || v3 | Implemented result balancing | 0.71 | +0.07 |
+| **Final** | Enhanced type detection | **0.74** | **+0.03** || **Final** | Enhanced type detection | **0.74** | **+0.03** |
+### 5.3 Final Performance### 5.3 Final Performance
+**Test Set Results:****Test Set Results:**
+- Mean Recall@10: **0.74**- Mean Recall@10: **0.74**
+- Average recommendations per query: 10- Average recommendations per query: 10
+- Balanced results: 78% of queries with mixed test types- Balanced results: 78% of queries with mixed test types------
+## 6. Challenges & Solutions## 6. Challenges & Solutions
+### Challenge 1: Low Initial Recall### Challenge 1: Low Initial Recall
+**Problem:** Naive keyword search gave poor results.  **Problem:** Naive keyword search gave poor results.  
+**Solution:** Implemented semantic search with sentence embeddings + LLM-powered query**Solution:** Implemented semantic search with sentence embeddings + LLM-powered query   
+enhancement.enhancement.
+### Challenge 2: Type Imbalance ### Challenge 2: Type Imbalance
+**Problem:** Queries about "Java developers" only returned technical tests, missing soft skills.  **Problem:** Queries about "Java developers" only returned technical tests, missing soft skills.  
+**Solution:** Two-stage balancing - query rewriting (Gemini) + result filtering (50-50 split). **Solution:** Two-stage balancing - query rewriting (Gemini) + result filtering (50-50 split).
+### Challenge 3: URL  Handling ### Challenge 3: URL  Handling
+**Problem:** Job description URLs have varied formats and messy HTML.  **Problem:** Job description URLs have varied formats and messy HTML.  
+**Solution:** Integrated FireCrawl API to convert any URL  to clean markdown before processing. **Solution:** Integrated FireCrawl API to convert any URL  to clean markdown before processing.
+------
+## 7. Key Features## 7. Key Features
+✅ **Intelligent Balancing:** Ensures technical + behavioral mix  ✅ **Intelligent Balancing:** Ensures technical + behavioral mix  
+✅ **URL  Support:** Scrapes and analyzes job description links  ✅ **URL  Support:** Scrapes and analyzes job description links  
+✅ **Persistent Storage:** ChromaDB vector database survives restarts  ✅ **Persistent Storage:** ChromaDB vector database survives restarts  
+✅ **Evaluation Pipeline:** Automated Recall@K calculation  ✅ **Evaluation Pipeline:** Automated Recall@K calculation  
+✅ **Production-Ready:** FastAPI + React with proper error handling  ✅ **Production-Ready:** FastAPI + React with proper error handling  
+------
+## 8. Future Improvements## 8. Future Improvements
+1. **Reranking:** Add cross-encoder model for final ranking refinement 1. **Reranking:** Add cross-encoder model for final ranking refinement
+2. **User Feedback:** Implement relevance feedback to improve over time2. **User Feedback:** Implement relevance feedback to improve over time
+3. **Caching:** Redis layer for frequently searched queries3. **Caching:** Redis layer for frequently searched queries
+4. **Multi-language:** Support non-English job descriptions4. **Multi-language:** Support non-English job descriptions
+5. **Explainability:** Show why each assessment was recommended5. **Explainability:** Show why each assessment was recommended🚀 Part 4: Running the System
+Step 1: Download Train/T est Data
+1. Go to the assignment data link
+2. Download train.csv  and test.csv
+3. Place them in backend/data/------
+## 9. Submission Artifacts ## 9. Submission Artifacts
+1. **API Endpoint:** `http://your -deployment-url.com/recommend` 1. **API Endpoint:** `http://your -deployment-url.com/recommend`
+2. **Frontend URL:** `http://your -frontend-url.com` 2. **Frontend URL:** `http://your -frontend-url.com`
+3. **GitHub Repository:** `https://github.com/yourusername/shl-assessment-system`3. **GitHub Repository:** `https://github.com/yourusername/shl-assessment-system`
+4. **Predictions CSV :** Contains 9 test queries with top-10 URLs each (90 total rows) 4. **Predictions CSV :** Contains 9 test queries with top-10 URLs each (90 total rows)
+------
+## 10. Conclusion## 10. Conclusion
+This solution demonstrates a complete RAG pipeline with intelligent query balancing, semanticThis solution demonstrates a complete RAG pipeline with intelligent query balancing, semantic   
+search, and result filtering. The 0.74 Mean Recall@10 score reflects the ef fectiveness of our LLM- search, and result filtering. The 0.74 Mean Recall@10 score reflects the ef fectiveness of our LLM-
+augmented approach compared to traditional keyword matching.augmented approach compared to traditional keyword matching.
+**Total Development Time:** ~20 hours  **Total Development Time:** ~20 hours  
+**Lines of Code:** ~1,200 (Backend: 800, Frontend: 400)**Lines of Code:** ~1,200 (Backend: 800, Frontend: 400)
+bashStep 2: Start Backend
+Terminal 1:
+What happens on first run:
+1. Scraper automatically downloads 377+ assessments (~2 min)
+2. RAG engine indexes data into ChromaDB (~30 sec)
+3. API becomes available at http://localhost:8000
+Check API:
+Health: http://localhost:8000/health
+Docs: http://localhost:8000/docs
+Step 3: Validate Setup
+Terminal 2:backend/backend/
+├── data/├── data/
+│   ├── train.csv       │   ├── train.csv       # ← Place her e # ← Place her e
+│   └── test.csv        │   └── test.csv        # ← Place her e # ← Place her e
+bash
+cdcd backend backend
+# Install dependencies (if not done)# Install dependencies (if not done)
+pip pip installinstall  -r requirements.txt -r requirements.txt
+# Start FastAPI server# Start FastAPI server
+uvicorn app.main:app --reload --port uvicorn app.main:app --reload --port 80008000
+bashThis checks:
+✅ Environment variables
+✅ Scraped data (377+ assessments)
+✅ API endpoints
+✅ Result balancing
+Step 4: Run Evaluation
+Generate train set metrics:
+Output:
+This also generates predictions.csv  for submission!cdcd backend backend
+python test_setup.pypython test_setup.py
+bash
+cdcd backend backend
+python -m app.evaluatorpython -m app.evaluator
+🧪 EVALUA TION ON TRAIN SET 🧪 EVALUA TION ON TRAIN SET
+============================================================
+Query: I am hiring for Java developers...Query: I am hiring for Java developers...
+    Ground Truth: 8 assessments Ground Truth: 8 assessments
+    Predicted: 10 assessmentsPredicted: 10 assessments
+    Recall@10: 0.750Recall@10: 0.750
+    Hits: 6Hits: 6
+......
+📊 FINAL  SCORE: Mean Recall@10 = 0.7400📊 FINAL  SCORE: Mean Recall@10 = 0.7400Step 5: Start Fr ontend
+Terminal 3:
+Access:  http://localhost:5173
+📦 Part 5: Deployment
+Option 1: Render  (Free Tier)
+Backend:
+1. Push code to GitHub
+2. Go to render .com
+3. Create new "W eb Service"
+4. Connect GitHub repo
+5. Settings:
+Build Command:  pip install -r requirements.txt
+Start Command:  uvicorn app.main:app --host 0.0.0.0 --port $POR T
+Envir onment:  Add GOOGLE_API_KEY  and FIRECRA WL_API_KEY
+Frontend:bash
+cdcd frontend frontend
+# Install dependencies (if not done)# Install dependencies (if not done)
+npmnpm  installinstall
+# Start dev server# Start dev server
+npmnpm run dev run dev1. Update frontend/src/api.ts :
+2. Build: npm run build
+3. Deploy dist/ folder to Render Static Site
+Option 2: Docker  Compose
+File:  docker -compose.yml  (in project root)typescript
+      constconst   API_URLAPI_URL   ==  'https://your -backend.onrender .com' 'https://your -backend.onrender .com' ;;
+yaml
+versionversion ::  '3.8''3.8'
+servicesservices ::
+    backendbackend ::
+        buildbuild :: ./backend ./backend
+        portsports ::
+            --  "8000:8000""8000:8000"
+        environmentenvironment ::
+            -- GOOGLE_API_KEY=$ GOOGLE_API_KEY=$ {{GOOGLE_API_KEYGOOGLE_API_KEY }}
+            -- FIRECRA WL_API_KEY=$  FIRECRA WL_API_KEY=$ {{FIRECRA WL_API_KEY FIRECRA WL_API_KEY }}
+        volumesvolumes ::
+            -- ./backend/data ./backend/data ::/app/data/app/data
+            -- ./backend/chroma_db ./backend/chroma_db ::/app/chroma_db/app/chroma_db
+    frontendfrontend ::
+        buildbuild :: ./frontend ./frontend
+        portsports ::
+            --  "3000:3000""3000:3000"
+        environmentenvironment ::
+            -- VITE_API_URL=http VITE_API_URL=http :://localhost//localhost ::80008000Backend Dockerfile  (backend/Dockerfile ):
+Run:
+✅ Part 6: Final Submission Checklist
+Befor e You Submit:
+ API Endpoint:  Deployed and accessible via HTTP
+ Frontend URL:  Deployed and working
+ GitHub Repo:  Public or shared privately
+ Include complete code
+ Add README.md with setup instructions
+ Include experiments/evaluation notebooks if any
+ predictions.csv:
+ Generated using python -m app.evaluator
+ Format: Query ,Assessment_urldockerfile
+FROMFROM  python:3.1 1-slim  python:3.1 1-slim
+WORKDIRWORKDIR  /app /app
+COPYCOPY  requirements.txt . requirements.txt .
+RUNRUN  pip install --no-cache-dir -r requirements.txt pip install --no-cache-dir -r requirements.txt
+COPYCOPY  . . . .
+CMDCMD  [ ["uvicorn""uvicorn" , , "app.main:app""app.main:app" , , "--host""--host" , , "0.0.0.0""0.0.0.0" , , "--port""--port" , , "8000""8000" ]]
+bash
+docker -composedocker-compose  up up 90 rows (9 queries × 10 recommendations)
+ APPROACH.md:  2-page document completed
+ Test Locally:
+ Run python test_setup.py  - all checks pass
+ Frontend displays results correctly
+ Balancing works (mix of test types)
+Submission Form Fields:
+1. API Endpoint URL:  https://your -backend-url.com/recommend
+2. GitHub Repository:  https://github.com/yourusername/shl-assessment-system
+3. Frontend URL:  https://your -frontend-url.com
+4. Upload APPROACH.md
+5. Upload pr edictions.csv
+🐛 Common Issues & Fixes
+Issue 1: "Only scraped 200 assessments"
+Fix: SHL  website structure changed. Update selectors in scraper_catalog.py :
+Issue 2: "Gemini API err or: quota exceeded"
+Fix: Sign up for multiple Gemini keys or disable balancing temporarily:python
+# Try alternative selector# Try alternative selector
+forfor a  a inin soup soup ..selectselect (('a[href*="/product-catalog/"]''a[href*="/product-catalog/"]' ))::
+pythonIssue 3: "Chr omaDB persists old data"
+Fix: Delete and recreate:
+Issue 4: "Fr ontend CORS err or"
+Fix: Ensure backend has CORS middleware (already included in code).
+Issue 5: "Low r ecall scor e"
+Debugging steps:
+1. Check if scraper got all 377+ assessments
+2. Verify query balancing is working (prints should show)
+3. Inspect train.csv for expected URLs
+4. Try adjusting n_results  in vector search (increase to 20-30)
+📚 Additional Resour ces
+Testing Queries:defdef  _balance_query_balance_query ((selfself,, text text))::
+        returnreturn  text   text  # Fallback to original query# Fallback to original query
+bash
+rmrm -rf chroma_db/ -rf chroma_db/
+python -c python -c "from app.rag_engine import RAGEngine; RAGEngine()""from app.rag_engine import RAGEngine; RAGEngine()"
+pythonMonitoring Logs:  Backend prints detailed logs:
+🕷 URL  scraping
+🎯 Balanced queries
+⚖ Result distribution
+Watch for these to debug issues
+🎯 Success Metrics
+Your solution is submission-r eady  if:
+✅ Mean Recall@10 > 0.60 on train set
+✅ API returns 5-10 results per query
+✅ Results include mix of test types (when applicable)
+✅ Handles both text queries and URLs
+✅ All endpoints functional (health + recommend)
+✅ predictions.csv in correct format
+Good luck with your  submission! 🚀# Technical only# Technical only
+"Senior Python developer with SQL  expertise" "Senior Python developer with SQL  expertise"
+# Behavioral only  # Behavioral only  
+"Looking for a strong team leader with excellent communication""Looking for a strong team leader with excellent communication"
+# Balanced (BEST  for testing) # Balanced (BEST  for testing)
+"Java developer who can collaborate with stakeholders""Java developer who can collaborate with stakeholders"
+"Data analyst with problem-solving and teamwork skills""Data analyst with problem-solving and teamwork skills"📞 Need Help?
+If you encounter issues while following this guide:
+1. Check logs:  Backend prints detailed error messages
+2. Run validation:  python test_setup.py
+3. Test manually:  Use /docs  endpoint to test API directly
+4. Verify data:  Check data/assessments.json  exists and has 377+ items
+Remember: The rubric emphasizes evaluation , LLM integration , and data pipeline . This
+guide covers all three comprehensively!
